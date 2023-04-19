@@ -29,6 +29,9 @@ Model details:
 
 ```
 python train.py --model_name efficientnet_lite0 --train_dir YOUR_TRAINDATASET_PATH --val_dir YOUR_VALDATASET_PATH
+
+python train.py --model_name efficientnet_lite1 --train_dir ./train --val_dir ./valid/ --display_interval 100 --save_interval 500 --val_interval 200 --total_iters 10000 --batch_size 64 --learning_rate 1e-5 --num_classes 2 --save ./models/
+
 ```
 
 ## Eval
