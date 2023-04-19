@@ -19,6 +19,7 @@ from utils.train_utils import accuracy, AvgrageMeter, CrossEntropyLabelSmooth, s
 CROP_PADDING = 32
 MEAN_RGB = [0.498, 0.498, 0.498]
 STDDEV_RGB = [0.502, 0.502, 0.502]
+topk_tuple = (1,2)
 
 class DataIterator(object):
 
@@ -40,17 +41,18 @@ def get_args():
 
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('--eval_resume', type=str, default='./efficientnet_lite0.pth', help='path for eval model')
-    parser.add_argument('--batch_size', type=int, default=1024, help='batch size')
-    parser.add_argument('--total_iters', type=int, default=300000, help='total iters')
-    parser.add_argument('--learning_rate', type=float, default=0.5, help='init learning rate')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
+    parser.add_argument('--total_iters', type=int, default=10000, help='total iters')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='init learning rate')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
     parser.add_argument('--weight_decay', type=float, default=4e-5, help='weight decay')
     parser.add_argument('--save', type=str, default='./models', help='path for saving trained models')
     parser.add_argument('--num_classes', type=int, default=1000, help='number of classes')
-    parser.add_argument('--num_workers', type=int, default=8, help='number of dataloader workers')
+    parser.add_argument('--num_workers', type=int, default=0, help='number of dataloader workers')
     parser.add_argument('--label_smooth', type=float, default=0.1, help='label smoothing')
 
-    parser.add_argument('--auto_continue', type=bool, default=True, help='auto continue')
+    # parser.add_argument('--auto_continue', type=bool, default=True, help='auto continue')
+    parser.add_argument('--auto_continue', action='store_true')
     parser.add_argument('--display_interval', type=int, default=20, help='display interval')
     parser.add_argument('--val_interval', type=int, default=10000, help='val interval')
     parser.add_argument('--save_interval', type=int, default=10000, help='save interval')
@@ -89,6 +91,7 @@ def main():
             transforms.RandomResizedCrop(input_size),
             transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4),
             transforms.RandomHorizontalFlip(0.5),
+            transforms.RandomRotation(15),
             transforms.ToTensor(),
             transforms.Normalize(MEAN_RGB, STDDEV_RGB)
         ])
@@ -106,7 +109,7 @@ def main():
             transforms.ToTensor(),
             transforms.Normalize(MEAN_RGB, STDDEV_RGB)
         ])),
-        batch_size=200, 
+        batch_size=args.batch_size, 
         shuffle=False,
         num_workers=args.num_workers, 
         pin_memory=use_gpu
@@ -164,7 +167,7 @@ def main():
         validate(model, device, args, all_iters=all_iters)
     all_iters = train(model, device, args, val_interval=int(1280000/args.batch_size), bn_process=True, all_iters=all_iters)
     validate(model, device, args, all_iters=all_iters)
-    save_checkpoint({'state_dict': model.state_dict(),}, args.total_iters, tag='bnps-')
+    save_checkpoint(args.save, {'state_dict': model.state_dict(),}, args.total_iters, tag='bnps-')
 
 def adjust_bn_momentum(model, iters):
     for m in model.modules():
@@ -182,7 +185,6 @@ def train(model, device, args, *, val_interval, bn_process=False, all_iters=None
     Top1_err, Top5_err = 0.0, 0.0
     model.train()
     for iters in range(1, val_interval + 1):
-        scheduler.step()
         if bn_process:
             adjust_bn_momentum(model, iters)
 
@@ -198,10 +200,10 @@ def train(model, device, args, *, val_interval, bn_process=False, all_iters=None
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        prec1, prec5 = accuracy(output, target, topk=(1, 5))
+        prec1, prec5 = accuracy(output, target, topk=topk_tuple)
 
         Top1_err += 1 - prec1.item() / 100
-        Top5_err += 1 - prec5.item() / 100
+        # Top5_err += 1 - prec5.item() / 100
 
         if all_iters % args.display_interval == 0:
             printInfo = 'TRAIN Iter {}: lr = {:.6f},\tloss = {:.6f},\t'.format(all_iters, scheduler.get_lr()[0], loss.item()) + \
@@ -213,9 +215,11 @@ def train(model, device, args, *, val_interval, bn_process=False, all_iters=None
             Top1_err, Top5_err = 0.0, 0.0
 
         if all_iters % args.save_interval == 0:
-            save_checkpoint({
+            save_checkpoint(args.save, 
+                {
                 'state_dict': model.state_dict(),
                 }, all_iters)
+        scheduler.step()
 
     return all_iters
 
@@ -228,7 +232,7 @@ def validate(model, device, args, *, all_iters=None):
     val_dataprovider = args.val_dataprovider
 
     model.eval()
-    max_val_iters = 250
+    max_val_iters = 5
     t1  = time.time()
     with torch.no_grad():
         for _ in range(1, max_val_iters + 1):
@@ -239,7 +243,7 @@ def validate(model, device, args, *, all_iters=None):
             output = model(data)
             loss = loss_function(output, target)
 
-            prec1, prec5 = accuracy(output, target, topk=(1, 5))
+            prec1, prec5 = accuracy(output, target, topk=topk_tuple)
             n = data.size(0)
             objs.update(loss.item(), n)
             top1.update(prec1.item(), n)
