@@ -37,25 +37,40 @@ class AvgrageMeter(object):
 		self.avg = self.sum / self.cnt
 
 
+# def accuracy(output, target, topk=(1,)):
+# 	maxk = max(topk)
+# 	batch_size = target.size(0)
+
+# 	_, pred = output.topk(maxk, 1, True, True)
+# 	pred = pred.t()
+# 	correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+# 	res = []
+# 	for k in topk:
+# 		correct_k = correct[:k].view(-1).float().sum(0)
+# 		res.append(correct_k.mul_(100.0/batch_size))
+# 	return res
+
 def accuracy(output, target, topk=(1,)):
-	maxk = max(topk)
-	batch_size = target.size(0)
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
 
-	_, pred = output.topk(maxk, 1, True, True)
-	pred = pred.t()
-	correct = pred.eq(target.view(1, -1).expand_as(pred))
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
 
-	res = []
-	for k in topk:
-		correct_k = correct[:k].view(-1).float().sum(0)
-		res.append(correct_k.mul_(100.0/batch_size))
-	return res
+        res = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float().sum(0)  # view() 대신 reshape() 사용
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
 
-def save_checkpoint(state, iters, tag=''):
-	if not os.path.exists("./models"):
-		os.makedirs("./models")
-	filename = os.path.join("./models/{}checkpoint-{:06}.pth.tar".format(tag, iters))
+def save_checkpoint(save_dir, state, iters, tag=''):
+	if not os.path.exists(save_dir):
+		os.makedirs(save_dir)
+	filename = os.path.join("{}/{}checkpoint-{:06}.pth.tar".format(save_dir, tag, iters))
 	torch.save(state, filename)
 
 def get_lastest_model():
